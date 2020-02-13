@@ -20,7 +20,7 @@ GOPATH ?= $(shell go env GOPATH)
 
 
 all build:
-	hack/build-go.sh ovnkube ovn-k8s-cni-overlay ovn-kube-util
+	hack/build-go.sh ovnkube ovn-k8s-cni-overlay ovn-kube-util ovn-k8s-cni-baremetal
 
 windows:
 	WINDOWS_BUILD="yes" hack/build-go.sh ovnkube ovn-k8s-cni-overlay
@@ -32,6 +32,7 @@ install:
 	install -D -m 755 ${OUT_DIR}/go/bin/ovnkube ${BINDIR}/
 	install -D -m 755 ${OUT_DIR}/go/bin/ovn-kube-util ${BINDIR}/
 	install -D -m 755 ${OUT_DIR}/go/bin/ovn-k8s-cni-overlay -t ${CNIBINDIR}/
+	install -D -m 755 ${OUT_DIR}/go/bin/ovn-k8s-cni-baremetal -t ${CNIBINDIR}/
 
 clean:
 	rm -rf ${OUT_DIR}

@@ -4,17 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/sirupsen/logrus"
 
 	"github.com/containernetworking/cni/pkg/types/current"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/config"
-	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/kube"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
 )
 
@@ -75,34 +72,10 @@ func (pr *PodRequest) cmdAdd() ([]byte, error) {
 		return nil, fmt.Errorf("required CNI variable missing")
 	}
 
-	clientset, err := util.NewClientset(&config.Kubernetes)
+	annotations, err := GetPodAnnotations(namespace, podName, false)
 	if err != nil {
-		return nil, fmt.Errorf("could not create kubernetes clientset: %v", err)
-	}
-	kubecli := &kube.Kube{KClient: clientset}
-
-	// Get the IP address and MAC address from the API server.
-	// Exponential back off ~32 seconds + 7* t(api call)
-	var annotationBackoff = wait.Backoff{Duration: 1 * time.Second, Steps: 7, Factor: 1.5, Jitter: 0.1}
-	var annotations map[string]string
-	if err = wait.ExponentialBackoff(annotationBackoff, func() (bool, error) {
-		annotations, err = kubecli.GetAnnotationsOnPod(namespace, podName)
-		if err != nil {
-			if isNotFoundError(err) {
-				// Pod not found; don't bother waiting longer
-				return false, err
-			}
-			logrus.Warningf("error getting pod annotations: %v", err)
-			return false, nil
-		}
-		if _, ok := annotations[util.OvnPodAnnotationName]; ok {
-			return true, nil
-		}
-		return false, nil
-	}); err != nil {
 		return nil, fmt.Errorf("failed to get pod annotation: %v", err)
 	}
-
 	podInfo, err := util.UnmarshalPodAnnotation(annotations)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal ovn annotation: %v", err)

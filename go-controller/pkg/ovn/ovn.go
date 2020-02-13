@@ -329,11 +329,11 @@ func (oc *Controller) ovnControllerEventChecker(stopChan chan struct{}) {
 	}
 }
 
-func podWantsNetwork(pod *kapi.Pod) bool {
+func PodWantsNetwork(pod *kapi.Pod) bool {
 	return !pod.Spec.HostNetwork
 }
 
-func podScheduled(pod *kapi.Pod) bool {
+func PodScheduled(pod *kapi.Pod) bool {
 	return pod.Spec.NodeName != ""
 }
 
@@ -343,11 +343,11 @@ func (oc *Controller) WatchPods() error {
 	_, err := oc.watchFactory.AddPodHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			pod := obj.(*kapi.Pod)
-			if !podWantsNetwork(pod) {
+			if !PodWantsNetwork(pod) {
 				return
 			}
 
-			if podScheduled(pod) {
+			if PodScheduled(pod) {
 				if err := oc.addLogicalPort(pod); err != nil {
 					logrus.Errorf(err.Error())
 					retryPods.Store(pod.UID, true)
@@ -359,12 +359,12 @@ func (oc *Controller) WatchPods() error {
 		},
 		UpdateFunc: func(old, newer interface{}) {
 			pod := newer.(*kapi.Pod)
-			if !podWantsNetwork(pod) {
+			if !PodWantsNetwork(pod) {
 				return
 			}
 
 			_, retry := retryPods.Load(pod.UID)
-			if podScheduled(pod) && retry {
+			if PodScheduled(pod) && retry {
 				if err := oc.addLogicalPort(pod); err != nil {
 					logrus.Errorf(err.Error())
 				} else {

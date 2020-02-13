@@ -14,7 +14,8 @@ import (
 // Interface represents the exported methods for dealing with getting/setting
 // kubernetes resources
 type Interface interface {
-	SetAnnotationsOnPod(pod *kapi.Pod, annotations map[string]string) error
+	
+	SetAnnotationsOnPod(namespace, name string, annotations map[string]string) error
 	SetAnnotationsOnNode(node *kapi.Node, annotations map[string]interface{}) error
 	UpdateNodeStatus(node *kapi.Node) error
 	GetAnnotationsOnPod(namespace, name string) (map[string]string, error)
@@ -31,8 +32,8 @@ type Kube struct {
 	KClient kubernetes.Interface
 }
 
-// SetAnnotationsOnPod takes the pod object and map of key/value string pairs to set as annotations
-func (k *Kube) SetAnnotationsOnPod(pod *kapi.Pod, annotations map[string]string) error {
+// SetAnnotationsOnPod takes the pod namspace, pod name and map of key/value string pairs to set as annotations
+func (k *Kube) SetAnnotationsOnPod(namespace, name string, annotations map[string]string) error {
 	var err error
 	var patchData []byte
 	patch := struct {
@@ -43,7 +44,7 @@ func (k *Kube) SetAnnotationsOnPod(pod *kapi.Pod, annotations map[string]string)
 		},
 	}
 
-	podDesc := pod.Namespace + "/" + pod.Name
+	podDesc := namespace + "/" + name
 	logrus.Infof("Setting annotations %v on pod %s", annotations, podDesc)
 	patchData, err = json.Marshal(&patch)
 	if err != nil {
@@ -51,7 +52,7 @@ func (k *Kube) SetAnnotationsOnPod(pod *kapi.Pod, annotations map[string]string)
 		return err
 	}
 
-	_, err = k.KClient.CoreV1().Pods(pod.Namespace).Patch(pod.Name, types.MergePatchType, patchData)
+	_, err = k.KClient.CoreV1().Pods(namespace).Patch(name, types.MergePatchType, patchData)
 	if err != nil {
 		logrus.Errorf("Error in setting annotation on pod %s: %v", podDesc, err)
 	}

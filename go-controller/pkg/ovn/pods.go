@@ -28,7 +28,7 @@ func (oc *Controller) syncPods(pods []interface{}) {
 			continue
 		}
 		_, err := util.UnmarshalPodAnnotation(pod.Annotations)
-		if podScheduled(pod) && podWantsNetwork(pod) && err == nil {
+		if PodScheduled(pod) && PodWantsNetwork(pod) && err == nil {
 			logicalPort := podLogicalPortName(pod)
 			expectedLogicalPorts[logicalPort] = true
 		}
@@ -373,7 +373,7 @@ func (oc *Controller) addLogicalPort(pod *kapi.Pod) error {
 
 	logrus.Debugf("Annotation values: ip=%s ; mac=%s ; gw=%s\nAnnotation=%s",
 		podCIDR, podMac, gatewayIP, marshalledAnnotation)
-	err = oc.kube.SetAnnotationsOnPod(pod, marshalledAnnotation)
+	err = oc.kube.SetAnnotationsOnPod(pod.Namespace, pod.Name, marshalledAnnotation)
 	if err != nil {
 		return fmt.Errorf("failed to set annotation on pod %s - %v", pod.Name, err)
 	}

@@ -98,6 +98,9 @@ func (cluster *OvnClusterController) StartClusterNode(name string) error {
 	var cidr string
 	var wg sync.WaitGroup
 
+	//@TODO: add flag to run in smart-nic mode
+	isSmartNic := true
+
 	// Setting debug log level during node bring up to expose bring up process.
 	// Log level is returned to configured value when bring up is complete.
 	var LogLevel = logrus.GetLevel()
@@ -241,8 +244,12 @@ func (cluster *OvnClusterController) StartClusterNode(name string) error {
 	}
 
 	// start the cni server
-	cniServer := cni.NewCNIServer("")
-	err = cniServer.Start(cni.HandleCNIRequest)
+	if isSmartNic {
+		err = cluster.watchPods()
+	} else {
+		cniServer := cni.NewCNIServer("")
+		err = cniServer.Start(cni.HandleCNIRequest)
+	}
 
 	return err
 }
@@ -290,4 +297,103 @@ func (cluster *OvnClusterController) watchConfigEndpoints(readyChan chan bool) e
 			},
 		}, nil)
 	return err
+}
+
+//WatchPod
+func (cluster *OvnClusterController) watchPods() error {
+	var retryPods sync.Map
+	_, err := cluster.watchFactory.AddPodHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			logrus.Infof("AddFunc:")
+			pod := obj.(*kapi.Pod)
+			if !ovn.PodWantsNetwork(pod) {
+				return
+			}
+			if ovn.PodScheduled(pod) {
+				pfindex, vfindex, ok := cluster.getSmartNicAnnotations(pod)
+				if !ok {
+					retryPods.Store(pod.UID, true)
+					return
+				}
+				err := cluster.addRepPort(pod, pfindex, vfindex)
+				if err != nil {
+					retryPods.Store(pod.UID, true)
+				} else {
+					retryPods.Delete(pod.UID)
+				}
+			} else {
+				// Handle unscheduled pods later in UpdateFunc
+				retryPods.Store(pod.UID, true)
+				return
+			}
+		},
+		UpdateFunc: func(old, newer interface{}) {
+			logrus.Infof("UpdateFunc:")
+			pod := newer.(*kapi.Pod)
+			if !ovn.PodWantsNetwork(pod) {
+				return
+			}
+			_, retry := retryPods.Load(pod.UID)
+			if ovn.PodScheduled(pod) && retry {
+				pfindex, vfindex, ok := cluster.getSmartNicAnnotations(pod)
+				if !ok {
+					retryPods.Store(pod.UID, true)
+					return
+				}
+				err := cluster.addRepPort(pod, pfindex, vfindex)
+				if err != nil {
+					retryPods.Store(pod.UID, true)
+				} else {
+					retryPods.Delete(pod.UID)
+				}
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			logrus.Infof("DeleteFunc:")
+			pod := obj.(*kapi.Pod)
+			pfindex, vfindex, ok := cluster.getSmartNicAnnotations(pod)
+			if !ok {
+				return
+			}
+			_ = cluster.delRepPort(pod, pfindex, vfindex)
+		},
+	}, nil)
+	return err
+}
+
+func (cluster *OvnClusterController) getSmartNicAnnotations(pod *kapi.Pod) (pfindex, vfindex string, isfound bool) {
+	isfound = false
+	pfindex, ok1 := pod.Annotations["ovn.smartnic.pf"]
+	vfindex, ok2 := pod.Annotations["ovn.smartnic.vf"]
+	isfound = ok1 && ok2
+	return pfindex, vfindex, isfound
+}
+
+func (cluster *OvnClusterController) addRepPort(pod *kapi.Pod, pfindex, vfindex string) error {
+	return wait.PollImmediate(500*time.Millisecond, 60*time.Second, func() (bool, error) {
+		portName := fmt.Sprintf("pf%svf%s", pfindex, vfindex)
+		_, _, err := util.RunOVSVsctl("--may-exist", "add-port", "br-int", portName)
+		if err != nil {
+			return false, nil
+		}
+		logrus.Infof("port %s added bridge", portName)
+		err = cluster.Kube.SetAnnotationsOnPod(pod.Namespace, pod.Name, map[string]string{"vf_rep_ready": "True"})
+		if err != nil {
+			logrus.Infof("failed to set annotations on pod %s error: %v", pod.Name, err)
+			return false, nil
+		}
+		return true, nil
+	})
+}
+
+func (cluster *OvnClusterController) delRepPort(pod *kapi.Pod, pfindex, vfindex string) error {
+	return wait.PollImmediate(500*time.Millisecond, 60*time.Second, func() (bool, error) {
+		portName := fmt.Sprintf("pf%svf%s", pfindex, vfindex)
+		_, _, err := util.RunOVSVsctl("--if-exists", "del-port", "br-int", portName)
+		if err != nil {
+			return false, nil
+		}
+		logrus.Infof("port %s deleted from bridge", portName)
+		return true, nil
+	})
 }
