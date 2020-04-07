@@ -168,13 +168,9 @@ func setupSriovInterface(netns ns.NetNS, containerID, ifName string, ifInfo *Pod
 	if err != nil {
 		return nil, nil, err
 	}
-	oldHostRepName := rep
 
-	// 5. rename the host VF representor
-	hostIface.Name = containerID[:15]
-	if err = renameLink(oldHostRepName, hostIface.Name); err != nil {
-		return nil, nil, fmt.Errorf("failed to rename %s to %s: %v", oldHostRepName, hostIface.Name, err)
-	}
+	hostIface.Name = rep
+	
 	link, err := netlink.LinkByName(hostIface.Name)
 	if err != nil {
 		return nil, nil, err
